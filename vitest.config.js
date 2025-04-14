@@ -1,5 +1,5 @@
 /**********************************************************************
- * Copyright (C) 2023-2024 Red Hat, Inc.
+ * Copyright (C) 2025 Red Hat, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,51 +15,41 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
+import { configDefaults, defineConfig } from 'vitest/config';
 
-import path from 'node:path';
+const PODMAN_DESKTOP_EXCLUDED = [
+  '**/builtin/**',
+  '**/dist/**',
+  '**/.{cache,git,idea,output,temp,cdix}/**',
+  '**/*.cdix/**',
+];
 
 /**
- * Config for global end-to-end tests
- * placed in project root tests folder
- * @type {import('vite').UserConfig}
- * @see https://vitest.dev/config/
+ * vitest workspace configuration for unit tests
  */
-const config = {
+export default defineConfig({
   test: {
-    retry: 3, // Retries failing tests up to 3 times
-    globals: true,
-    environment: 'jsdom',
-    globalSetup: './tests/playwright/src/globalSetup/global-setup.ts',
-    /**
-     * By default, vitest search test files in all packages.
-     * For e2e tests have sense search only is project root tests folder
-     */
-    include: [
-      '**/tests/playwright/src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
-      './scripts/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
+    workspace: [
+      '{extensions,packages,tools,storybook,website,scripts}/**/{vitest,vite}.config.{js,ts}',
+      '!**/builtin/**',
     ],
-    exclude: [
-      '**/builtin/**',
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/.{idea,git,cache,output,temp,cdix}/**',
-      '**/{.electron-builder,babel,changelog,docusaurus,jest,postcss,rollup,svelte,tailwind,vite,vitest*,webpack}.config.*',
-    ],
-
-    /**
-     * A default timeout of 5000ms is sometimes not enough for playwright.
-     */
-    testTimeout: 60_000,
-    hookTimeout: 120_000,
-    // test reporters - default for all and junit for CI
-    reporters: process.env.CI ? [['default'], ['junit', { includeConsoleOutput: false }]] : ['default'],
-    outputFile: process.env.CI ? { junit: 'tests/playwright/output/junit-results.xml' } : {},
-  },
-  resolve: {
-    alias: {
-      '@podman-desktop/api': path.resolve(__dirname, '__mocks__/@podman-desktop/api.js'),
+    // use GitHub action reporters when running in CI
+    reporters: process.env.CI ? [['junit', { includeConsoleOutput: false }]] : ['default'],
+    outputFile: process.env.CI ? { junit: 'coverage/junit-results.xml' } : {},
+    coverage: {
+      all: true,
+      clean: true,
+      excludeAfterRemap: true,
+      provider: 'v8',
+      reporter: process.env.CI ? ['json'] : ['lcov', 'text'],
+      include: [
+        // projects with sources in src folder
+        '{extensions,packages,tools,storybook}/**/{src,scripts}/**',
+        // projects with sources at root
+        '{website,scripts}/*',
+      ],
+      exclude: [...configDefaults.coverage.exclude, ...PODMAN_DESKTOP_EXCLUDED],
     },
+    exclude: [...configDefaults.exclude, ...PODMAN_DESKTOP_EXCLUDED],
   },
-};
-
-export default config;
+});
