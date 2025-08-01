@@ -83,7 +83,7 @@ export class PortForwardConnectionService {
     return new Promise<IDisposable>((resolve, reject) => {
       server.listen(forwardSetup.forward.localPort, 'localhost');
       server.on('error', (error: NodeJS.ErrnoException) => this.onServerError(error, reject, forwardSetup));
-      resolve(disposable);
+      server.on('listening', () => resolve(disposable));
     });
   }
 
