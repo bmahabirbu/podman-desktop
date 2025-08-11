@@ -23,45 +23,22 @@ import type { OnboardingInfo } from '/@api/onboarding';
 
 import { EventStore } from './event-store';
 
-const windowEvents = ['extension-stopped', 'extension-started', 'extension-failed', 'extensions-started'];
-// core extensions that must finish before onboarding tiles display
-const CORE_EXTENSIONS = new Set(['podman-desktop.podman', 'podman-desktop.compose', 'podman-desktop.kubectl-cli']);
-const loadedExtensions = new Set<string>();
+const windowEvents = ['extension-stopped', 'extension-started', 'extensions-started'];
 const windowListeners = ['extensions-already-started'];
 
 let readyToUpdate = false;
 
-export async function checkForUpdate(eventName: string, args?: unknown[]): Promise<boolean> {
-  // If we're already ready, no need for further checks.
-  if (readyToUpdate) {
+export async function checkForUpdate(eventName: string): Promise<boolean> {
+  // Check for first extension to start to unblock the UI
+  if (eventName === 'extension-started') {
     return true;
   }
 
-  // Check for individual core extension events.
-  if (
-    (eventName === 'extension-started' || eventName === 'extension-failed') &&
-    Array.isArray(args) &&
-    typeof args[0] === 'string'
-  ) {
-    const id = args[0];
-    if (CORE_EXTENSIONS.has(id)) {
-      loadedExtensions.add(id);
-      // If all three core extensions have reported their status, we're ready.
-      if (loadedExtensions.size === CORE_EXTENSIONS.size) {
-        readyToUpdate = true;
-        return true;
-      }
-    }
-  }
-
-  // Fallback: If the core extensions don't all report for any reason,
-  // the global 'extensions-already-started' will unblock the UI as a safety net.
   if (eventName === 'extensions-already-started') {
     readyToUpdate = true;
-    return true;
   }
 
-  return false;
+  return readyToUpdate;
 }
 export const onboardingList: Writable<OnboardingInfo[]> = writable([]);
 
