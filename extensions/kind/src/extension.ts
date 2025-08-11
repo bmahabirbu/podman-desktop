@@ -586,6 +586,10 @@ async function registerCliTool(
 }
 
 export async function activate(extensionContext: extensionApi.ExtensionContext): Promise<void> {
+  // Add a 20s delay to simulate a slow activation
+  await new Promise(resolve => setTimeout(resolve, 20_000));
+  console.log('Kind extension simulate slow activation');
+
   const telemetryLogger = extensionApi.env.createTelemetryLogger();
 
   // let's register the CLI Tool
