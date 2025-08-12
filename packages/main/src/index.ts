@@ -60,13 +60,12 @@ app.once('before-quit', event => {
     return;
   }
   event.preventDefault();
-  extensionLoader
-    ?.stopAllExtensions()
+  extensionLoader[Symbol.asyncDispose]()
     .then(() => {
-      console.log('Stopped all extensions');
+      console.log('Extensions disposed successfully');
     })
     .catch((error: unknown) => {
-      console.log('Error stopping extensions', error);
+      console.log('Error disposing extensions', error);
     })
     .finally(() => {
       stoppedExtensions.val = true;
