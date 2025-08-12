@@ -238,6 +238,7 @@ export class PluginSystem {
   // The yet to be init ExtensionLoader
   private extensionLoader!: ExtensionLoader;
   private validExtList!: ExtensionInfo[];
+  private container?: Container;
 
   constructor(
     private trayMenu: TrayMenu,
@@ -457,7 +458,8 @@ export class PluginSystem {
 
     // init api sender
     const apiSender = this.getApiSender(this.getWebContentsSender());
-    const container = new Container();
+    this.container = new Container();
+    const container = this.container;
     container.bind<ApiSenderType>(ApiSenderType).toConstantValue(apiSender);
     container.bind<TrayMenu>(TrayMenu).toConstantValue(this.trayMenu);
     container.bind<IconRegistry>(IconRegistry).toSelf().inSingletonScope();
@@ -3168,5 +3170,17 @@ export class PluginSystem {
       abortController.abort();
     });
     return abortController;
+  }
+
+  async dispose(): Promise<void> {
+    // Manually dispose critical services since InversifyJS doesn't have container.dispose()
+    try {
+      if (this.container?.isBound(ExtensionLoader)) {
+        const extensionLoader = this.container.get<ExtensionLoader>(ExtensionLoader);
+        await extensionLoader[Symbol.asyncDispose]();
+      }
+    } catch (error) {
+      console.error('Error disposing ExtensionLoader:', error);
+    }
   }
 }

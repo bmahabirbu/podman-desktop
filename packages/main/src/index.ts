@@ -18,7 +18,6 @@
 import { app, ipcMain, Menu, Tray } from 'electron';
 
 import { restoreWindow } from '/@/mainWindow.js';
-import type { ExtensionLoader } from '/@/plugin/extension/extension-loader.js';
 import type { Event } from '/@api/event.js';
 
 import { ApplicationMenuBuilder } from './application-menu-builder.js';
@@ -33,7 +32,7 @@ import { AnimatedTray } from './tray-animate-icon.js';
 import { TrayMenu } from './tray-menu.js';
 import { isMac, isWindows, stoppedExtensions } from './util.js';
 
-let extensionLoader: ExtensionLoader | undefined;
+let pluginSystem: PluginSystem | undefined;
 
 // Main startup
 const podmanDesktopMain = new Main(app);
@@ -55,17 +54,20 @@ app.on('second-instance', (_event, _args, _workingDirectory, additionalData: unk
 });
 
 app.once('before-quit', event => {
-  if (!extensionLoader) {
+  if (!pluginSystem) {
     stoppedExtensions.val = true;
     return;
   }
   event.preventDefault();
-  extensionLoader[Symbol.asyncDispose]()
+
+  // Dispose plugin system which will trigger @preDestroy on critical services
+  pluginSystem
+    .dispose()
     .then(() => {
-      console.log('Extensions disposed successfully');
+      console.log('Plugin system disposed successfully');
     })
     .catch((error: unknown) => {
-      console.log('Error disposing extensions', error);
+      console.log('Error disposing plugin system', error);
     })
     .finally(() => {
       stoppedExtensions.val = true;
@@ -96,7 +98,7 @@ app.whenReady().then(
     const onDidCreatedConfigurationRegistry: Event<ConfigurationRegistry> = _onDidCreatedConfigurationRegistry.event;
 
     // Start extensions
-    const pluginSystem = new PluginSystem(trayMenu, podmanDesktopMain.mainWindowDeferred);
+    pluginSystem = new PluginSystem(trayMenu, podmanDesktopMain.mainWindowDeferred);
 
     onDidCreatedConfigurationRegistry(async (configurationRegistry: ConfigurationRegistry) => {
       // If we've manually set the tray icon color, update the tray icon. This can only be done
@@ -143,7 +145,7 @@ app.whenReady().then(
       await automaticStartup.configure();
     });
 
-    extensionLoader = await pluginSystem.initExtensions(_onDidCreatedConfigurationRegistry);
+    await pluginSystem.initExtensions(_onDidCreatedConfigurationRegistry);
   },
   (e: unknown) => console.error('Failed to start app:', e),
 );
