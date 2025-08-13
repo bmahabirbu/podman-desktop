@@ -766,3 +766,122 @@ describe.each<{
     expect(originalTask.error).toEqual('Something went wrong while creating container provider: Error: an error');
   });
 });
+
+describe('PluginSystem disposal', () => {
+  test('dispose() should call ExtensionLoader Symbol.asyncDispose', async () => {
+    // Create mock TrayMenu
+    const trayMenuMock = {} as TrayMenu;
+
+    // Create mock main window deferred
+    const mainWindowDeferred = Promise.withResolvers<BrowserWindow>();
+
+    // Create PluginSystem instance
+    const pluginSystem = new PluginSystem(trayMenuMock, mainWindowDeferred);
+
+    // Mock the container and ExtensionLoader
+    const mockExtensionLoader = {
+      [Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const mockContainer = {
+      isBound: vi.fn().mockReturnValue(true),
+      get: vi.fn().mockReturnValue(mockExtensionLoader),
+    };
+
+    // Set the container on the PluginSystem
+    (pluginSystem as any).container = mockContainer;
+
+    // Call dispose
+    await pluginSystem.dispose();
+
+    // Verify that the container was checked for ExtensionLoader binding
+    expect(mockContainer.isBound).toHaveBeenCalledWith(ExtensionLoader);
+
+    // Verify that ExtensionLoader was retrieved from container
+    expect(mockContainer.get).toHaveBeenCalledWith(ExtensionLoader);
+
+    // Verify that Symbol.asyncDispose was called on ExtensionLoader
+    expect(mockExtensionLoader[Symbol.asyncDispose]).toHaveBeenCalled();
+  });
+
+  test('dispose() should handle missing container gracefully', async () => {
+    // Create mock TrayMenu
+    const trayMenuMock = {} as TrayMenu;
+
+    // Create mock main window deferred
+    const mainWindowDeferred = Promise.withResolvers<BrowserWindow>();
+
+    // Create PluginSystem instance
+    const pluginSystem = new PluginSystem(trayMenuMock, mainWindowDeferred);
+
+    // Don't set a container (it should be undefined)
+
+    // Call dispose - should not throw
+    await expect(pluginSystem.dispose()).resolves.not.toThrow();
+  });
+
+  test('dispose() should handle ExtensionLoader not bound gracefully', async () => {
+    // Create mock TrayMenu
+    const trayMenuMock = {} as TrayMenu;
+
+    // Create mock main window deferred
+    const mainWindowDeferred = Promise.withResolvers<BrowserWindow>();
+
+    // Create PluginSystem instance
+    const pluginSystem = new PluginSystem(trayMenuMock, mainWindowDeferred);
+
+    // Mock container that returns false for isBound
+    const mockContainer = {
+      isBound: vi.fn().mockReturnValue(false),
+      get: vi.fn(),
+    };
+
+    // Set the container on the PluginSystem
+    (pluginSystem as any).container = mockContainer;
+
+    // Call dispose
+    await pluginSystem.dispose();
+
+    // Verify that the container was checked for ExtensionLoader binding
+    expect(mockContainer.isBound).toHaveBeenCalledWith(ExtensionLoader);
+
+    // Verify that get was NOT called since ExtensionLoader is not bound
+    expect(mockContainer.get).not.toHaveBeenCalled();
+  });
+
+  test('dispose() should handle disposal errors gracefully', async () => {
+    // Create mock TrayMenu
+    const trayMenuMock = {} as TrayMenu;
+
+    // Create mock main window deferred
+    const mainWindowDeferred = Promise.withResolvers<BrowserWindow>();
+
+    // Create PluginSystem instance
+    const pluginSystem = new PluginSystem(trayMenuMock, mainWindowDeferred);
+
+    // Mock ExtensionLoader that throws an error during disposal
+    const mockExtensionLoader = {
+      [Symbol.asyncDispose]: vi.fn().mockRejectedValue(new Error('Disposal failed')),
+    };
+
+    const mockContainer = {
+      isBound: vi.fn().mockReturnValue(true),
+      get: vi.fn().mockReturnValue(mockExtensionLoader),
+    };
+
+    // Set the container on the PluginSystem
+    (pluginSystem as any).container = mockContainer;
+
+    // Spy on console.error
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    // Call dispose - should not throw despite internal error
+    await expect(pluginSystem.dispose()).resolves.not.toThrow();
+
+    // Verify that console.error was called with the error
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Error disposing ExtensionLoader:', expect.any(Error));
+
+    // Cleanup
+    consoleErrorSpy.mockRestore();
+  });
+});
