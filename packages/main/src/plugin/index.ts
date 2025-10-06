@@ -75,6 +75,8 @@ import type {
   ContainerInfo,
   ImageLoadOptions,
   ImagesSaveOptions,
+  NetworkCreateOptions,
+  NetworkCreateResult,
   SimpleContainerInfo,
   VolumeCreateOptions,
   VolumeCreateResponseInfo,
@@ -815,6 +817,16 @@ export class PluginSystem {
     this.ipcHandle('container-provider-registry:listNetworks', async (): Promise<NetworkInspectInfo[]> => {
       return containerProviderRegistry.listNetworks();
     });
+    this.ipcHandle(
+      'container-provider-registry:createNetwork',
+      async (
+        _listener,
+        providerContainerConnectionInfo: ProviderContainerConnectionInfo,
+        options: NetworkCreateOptions,
+      ): Promise<NetworkCreateResult> => {
+        return containerProviderRegistry.createNetwork(providerContainerConnectionInfo, options);
+      },
+    );
     this.ipcHandle(
       'container-provider-registry:listVolumes',
       async (_listener, fetchUsage: boolean): Promise<VolumeListInfo[]> => {

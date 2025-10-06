@@ -54,6 +54,8 @@ import type {
   ContainerInfo,
   ImageLoadOptions,
   ImagesSaveOptions,
+  NetworkCreateOptions,
+  NetworkCreateResult,
   SimpleContainerInfo,
   VolumeCreateOptions,
 } from '/@api/container-info';
@@ -302,6 +304,16 @@ export function initExposure(): void {
   contextBridge.exposeInMainWorld('listNetworks', async (): Promise<NetworkInspectInfo[]> => {
     return ipcInvoke('container-provider-registry:listNetworks');
   });
+
+  contextBridge.exposeInMainWorld(
+    'createNetwork',
+    async (
+      providerContainerConnectionInfo: ProviderContainerConnectionInfo,
+      options: NetworkCreateOptions,
+    ): Promise<NetworkCreateResult> => {
+      return ipcInvoke('container-provider-registry:createNetwork', providerContainerConnectionInfo, options);
+    },
+  );
 
   contextBridge.exposeInMainWorld(
     'replicatePodmanContainer',
