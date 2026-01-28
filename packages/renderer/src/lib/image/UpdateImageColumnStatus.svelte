@@ -13,13 +13,15 @@ let { object }: Props = $props();
 let statusStyle = $derived(getUpdateAvailableStyle(object.status));
 </script>
 
-<div class="flex flex-col gap-1">
-  <Label role="status" name={statusStyle.label}>
-    <div class="w-2 h-2 shrink-0 {statusStyle.dotColor} rounded-full"></div>
-  </Label>
-  {#if object.status?.message}
+<div class="flex flex-col gap-1 items-start text-left">
+  <div class="flex items-start">
+    <Label role="status" name={statusStyle.label}>
+      <div class="w-2 h-2 shrink-0 {statusStyle.dotColor} rounded-full"></div>
+    </Label>
+  </div>
+  {#if !object.status?.updateAvailable && object.status?.message}
     <div 
-      class="text-xs text-[var(--pd-table-body-text-secondary)] truncate max-w-[200px]" 
+      class="text-xs text-[var(--pd-table-body-text-secondary)] truncate" 
       title={object.status.message}>
       {object.status.message}
     </div>
