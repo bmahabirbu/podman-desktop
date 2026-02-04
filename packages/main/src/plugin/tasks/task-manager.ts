@@ -182,7 +182,8 @@ export class TaskManager {
         markdownActions: task.markdownActions,
         body: task.body ?? '',
         state: 'completed',
-        error: undefined,
+        // Set error to body so the message displays in the UI for all notification types
+        error: task.body ?? undefined,
         cancellable: task.cancellable,
         cancellationTokenSourceId: task.cancellationTokenSourceId,
       };

@@ -1284,7 +1284,28 @@ export class PluginSystem {
         imageTag: string,
         localDigests: string[],
       ): Promise<ImageUpdateStatus> => {
-        return imageRegistry.checkImageUpdateStatus(imageReference, imageTag, localDigests);
+        const result = await imageRegistry.checkImageUpdateStatus(imageReference, imageTag, localDigests);
+
+        // Create a notification task so users can see details in the Task Manager
+        if (result.status === 'error') {
+          taskManager.createNotificationTask({
+            title: `Update check failed: ${imageReference}`,
+            body: result.message ?? 'Unknown error occurred while checking for updates',
+            type: 'error',
+          });
+        } else {
+          // Success notification for normal and skipped statuses
+          const title = result.updateAvailable
+            ? `Update available: ${imageReference}`
+            : `Up to date: ${imageReference}`;
+          taskManager.createNotificationTask({
+            title,
+            body: result.message ?? 'Update check completed',
+            type: 'info',
+          });
+        }
+
+        return result;
       },
     );
 

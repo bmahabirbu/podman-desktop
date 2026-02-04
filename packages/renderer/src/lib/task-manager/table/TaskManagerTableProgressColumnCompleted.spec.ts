@@ -59,6 +59,16 @@ const failureSuccessTaskNoError: TaskInfoUI = {
   action: 'dummy',
   cancellable: false,
 } as unknown as TaskInfoUI;
+
+const completedSuccessTaskWithMessage: TaskInfoUI = {
+  id: '1',
+  name: 'Completed Task With Message',
+  state: 'completed',
+  status: 'success',
+  error: 'Image is detected as local',
+  action: 'dummy',
+  cancellable: false,
+} as unknown as TaskInfoUI;
 test('Expect display success for completed task with success', async () => {
   render(TaskManagerTableProgressColumnCompleted, { task: completedSuccessTask });
 
@@ -108,4 +118,21 @@ test('Expect no error for completed task with failure an no error', async () => 
 
   // no error child
   expect(completedStatus.children.length).toBe(2);
+});
+
+test('Expect display message for completed success task with message', async () => {
+  render(TaskManagerTableProgressColumnCompleted, { task: completedSuccessTaskWithMessage });
+
+  const completedStatus = screen.getByRole('status', {
+    name: 'completed status for task Completed Task With Message',
+  });
+  expect(completedStatus).toBeInTheDocument();
+
+  // expect to see the success status
+  const successStatus = screen.getByText('success');
+  expect(successStatus).toBeInTheDocument();
+
+  // expect to see the message (displayed in the error field for UI purposes)
+  const message = screen.getByText('(Image is detected as local)');
+  expect(message).toBeInTheDocument();
 });

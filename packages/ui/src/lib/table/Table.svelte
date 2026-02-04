@@ -41,6 +41,7 @@ export let key: (object: T) => string = item => item.name ?? String(item);
 export let label: (object: T) => string = item => item.name ?? String(item);
 
 export let enableLayoutConfiguration: boolean = false;
+export let onColumnVisibilityChange: ((columnId: string, enabled: boolean) => void) | undefined = undefined;
 
 let columnItems: ListOrganizerItem[] = [];
 let columnOrdering = new SvelteMap<string, number>();
@@ -344,6 +345,8 @@ function handleColumnOrderChange(newOrdering: SvelteMap<string, number>): void {
 // Handle column toggle changes from ListOrganizer
 function handleColumnToggle(itemId: string, enabled: boolean): void {
   columnItems = columnItems.map(item => (item.id === itemId ? { ...item, enabled } : item));
+  // Notify parent of column visibility change
+  onColumnVisibilityChange?.(itemId, enabled);
 }
 
 // Reset columns to default state and clear saved configuration

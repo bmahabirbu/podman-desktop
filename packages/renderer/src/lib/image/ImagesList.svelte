@@ -24,22 +24,31 @@ import ContainerEngineEnvironmentColumn from '/@/lib/table/columns/ContainerEngi
 import { IMAGE_LIST_VIEW_BADGES, IMAGE_LIST_VIEW_ICONS, IMAGE_VIEW_BADGES, IMAGE_VIEW_ICONS } from '/@/lib/view/views';
 import { containersInfos } from '/@/stores/containers';
 import { context } from '/@/stores/context';
+import {
+  clearImageUpdateStatus,
+  getImageUpdateStatus,
+  hasImageBeenChecked,
+  setImageUpdateStatus,
+} from '/@/stores/image-update-status-store';
 import { filtered, imagesInfos, searchPattern } from '/@/stores/images';
 import { providerInfos } from '/@/stores/providers';
 import { saveImagesInfo } from '/@/stores/save-images-store';
-import { updateImagesInfo } from '/@/stores/update-images-store';
 import { viewsContributions } from '/@/stores/views';
 import type { ContainerInfo } from '/@api/container-info';
 import type { ImageInfo } from '/@api/image-info';
+import type { ImageUpdateStatus } from '/@api/image-registry';
+import type { ProviderContainerConnectionInfo } from '/@api/provider-info';
 import type { ViewInfoUI } from '/@api/view-info';
 
 import { ImageUtils } from './image-utils';
 import ImageColumnActions from './ImageColumnActions.svelte';
 import ImageColumnName from './ImageColumnName.svelte';
 import ImageColumnStatus from './ImageColumnStatus.svelte';
+import ImageColumnUpdateStatus from './ImageColumnUpdateStatus.svelte';
 import ImageEmptyScreen from './ImageEmptyScreen.svelte';
 import type { ImageInfoUI } from './ImageInfoUI';
 import NoContainerEngineEmptyScreen from './NoContainerEngineEmptyScreen.svelte';
+import UpdateImagesModal from './UpdateImagesModal.svelte';
 
 interface Props {
   searchTerm?: string;
@@ -73,13 +82,26 @@ function updateImages(globalContext: ContextUI): void {
     )
     .flat();
 
-  // update selected items based on current selected items
+  // update selected items and preserve update status based on current selected items
   computedImages.forEach(image => {
     const matchingImage = images.find(
       currentImage => currentImage.id === image.id && currentImage.engineId === image.engineId,
     );
     if (matchingImage) {
       image.selected = matchingImage.selected;
+      // Preserve update status from previous state (in-memory)
+      image.updateStatus = matchingImage.updateStatus;
+      image.updateCheckInProgress = matchingImage.updateCheckInProgress;
+      image.updateInProgress = matchingImage.updateInProgress;
+      image.updateError = matchingImage.updateError;
+    }
+
+    // If not found in current state, try to restore from persistent store
+    if (!image.updateStatus) {
+      const storedStatus = getImageUpdateStatus(image.engineId, image.id, image.tag);
+      if (storedStatus) {
+        image.updateStatus = storedStatus.status;
+      }
     }
   });
   computedImages.sort((first, second) => second.createdAt - first.createdAt);
@@ -221,6 +243,10 @@ async function saveSelectedImages(): Promise<void> {
   router.goto('/images/save');
 }
 
+// Modal state for update confirmation
+let showUpdateModal = $state(false);
+let selectedImagesForUpdate: ImageInfoUI[] = $state([]);
+
 // update the items selected in the list
 async function updateSelectedImages(): Promise<void> {
   const selectedImages = images.filter(image => image.selected);
@@ -228,11 +254,208 @@ async function updateSelectedImages(): Promise<void> {
     return;
   }
 
-  updateImagesInfo.set(selectedImages);
-  router.goto('/images/update');
+  // Check for updates for selected images that haven't been checked yet
+  const uncheckedImages = selectedImages.filter(img => !img.updateStatus && !img.updateCheckInProgress);
+  if (uncheckedImages.length > 0) {
+    await Promise.all(uncheckedImages.map(img => checkImageForUpdates(img)));
+  }
+
+  // Show modal with selected images
+  selectedImagesForUpdate = selectedImages;
+  showUpdateModal = true;
+}
+
+function closeUpdateModal(): void {
+  showUpdateModal = false;
+  selectedImagesForUpdate = [];
+}
+
+async function handleUpdateFromModal(imagesToUpdate: ImageInfoUI[]): Promise<void> {
+  await performBulkImageUpdate(imagesToUpdate);
+}
+
+// Force recheck images (clear stored status and recheck)
+async function handleRecheckFromModal(imagesToRecheck: ImageInfoUI[]): Promise<void> {
+  // Clear stored status and in-memory status for all images
+  for (const image of imagesToRecheck) {
+    clearImageUpdateStatus(image.engineId, image.id, image.tag);
+    image.updateStatus = undefined;
+  }
+  images = images; // Trigger reactivity
+
+  // Recheck all images in parallel
+  await Promise.all(imagesToRecheck.map(image => forceCheckImageForUpdates(image)));
+}
+
+// Force check a single image (bypasses the "already checked" logic)
+async function forceCheckImageForUpdates(image: ImageInfoUI): Promise<void> {
+  if (image.updateCheckInProgress) {
+    return;
+  }
+
+  image.updateCheckInProgress = true;
+  images = images; // Trigger reactivity
+
+  try {
+    const imageRef = `${image.name}:${image.tag}`;
+    const localDigests = getLocalDigests(image);
+    const status: ImageUpdateStatus = await window.checkImageUpdateStatus(imageRef, image.tag, localDigests);
+    image.updateStatus = status;
+
+    // Store in persistent store
+    setImageUpdateStatus(image.engineId, image.id, image.tag, status);
+  } catch (err: unknown) {
+    const errorStatus: ImageUpdateStatus = {
+      status: 'error',
+      updateAvailable: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
+    image.updateStatus = errorStatus;
+
+    // Store error status too
+    setImageUpdateStatus(image.engineId, image.id, image.tag, errorStatus);
+  } finally {
+    image.updateCheckInProgress = false;
+    images = images; // Trigger reactivity
+  }
 }
 
 let selectedItemsNumber: number | undefined = $state();
+
+// Get local digests for an image from the store
+function getLocalDigests(imageUI: ImageInfoUI): string[] {
+  const imageInfo = storeImages.find(img => img.Id === imageUI.id);
+  return imageInfo?.RepoDigests ?? [];
+}
+
+// Check for updates for a single image
+async function checkImageForUpdates(image: ImageInfoUI): Promise<void> {
+  // Skip if already checking or already has status
+  if (image.updateCheckInProgress || image.updateStatus) {
+    return;
+  }
+
+  // Check if already in the persistent store
+  if (hasImageBeenChecked(image.engineId, image.id, image.tag)) {
+    const storedStatus = getImageUpdateStatus(image.engineId, image.id, image.tag);
+    if (storedStatus) {
+      image.updateStatus = storedStatus.status;
+      images = images; // Trigger reactivity
+      return;
+    }
+  }
+
+  image.updateCheckInProgress = true;
+  images = images; // Trigger reactivity
+
+  try {
+    const imageRef = `${image.name}:${image.tag}`;
+    const localDigests = getLocalDigests(image);
+    const status: ImageUpdateStatus = await window.checkImageUpdateStatus(imageRef, image.tag, localDigests);
+    image.updateStatus = status;
+
+    // Store in persistent store
+    setImageUpdateStatus(image.engineId, image.id, image.tag, status);
+  } catch (err: unknown) {
+    const errorStatus: ImageUpdateStatus = {
+      status: 'error',
+      updateAvailable: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
+    image.updateStatus = errorStatus;
+
+    // Store error status too
+    setImageUpdateStatus(image.engineId, image.id, image.tag, errorStatus);
+  } finally {
+    image.updateCheckInProgress = false;
+    images = images; // Trigger reactivity
+  }
+}
+
+// Check for updates for images that haven't been checked yet
+async function checkUncheckedImages(): Promise<void> {
+  // Only check images that don't have a status yet and aren't being checked
+  const uncheckedImages = images.filter(
+    image =>
+      !image.updateStatus && !image.updateCheckInProgress && !hasImageBeenChecked(image.engineId, image.id, image.tag),
+  );
+
+  if (uncheckedImages.length === 0) {
+    return;
+  }
+
+  // Check unchecked images in parallel
+  await Promise.all(uncheckedImages.map(image => checkImageForUpdates(image)));
+}
+
+// Handle column visibility change
+function handleColumnVisibilityChange(columnId: string, enabled: boolean): void {
+  if (columnId === 'Update Available' && enabled) {
+    // Only check images that haven't been checked yet
+    checkUncheckedImages().catch((err: unknown) => {
+      console.error('Failed to check for updates:', err);
+    });
+  }
+}
+
+// Find the provider connection for an image using engineId
+function getProviderConnection(engineId: string): ProviderContainerConnectionInfo | undefined {
+  const dotIndex = engineId.indexOf('.');
+  if (dotIndex === -1) {
+    return providerConnections.find(conn => conn.name === engineId);
+  }
+
+  const providerId = engineId.substring(0, dotIndex);
+  const connectionName = engineId.substring(dotIndex + 1);
+
+  const provider = $providerInfos.find(p => p.id === providerId);
+  if (provider) {
+    return provider.containerConnections.find(conn => conn.name === connectionName && conn.status === 'started');
+  }
+
+  return undefined;
+}
+
+// Update a single image (pull new version)
+async function performImageUpdate(image: ImageInfoUI): Promise<void> {
+  const providerConnection = getProviderConnection(image.engineId);
+  if (!providerConnection) {
+    image.updateError = `No provider connection found for engineId "${image.engineId}"`;
+    images = images;
+    return;
+  }
+
+  image.updateInProgress = true;
+  image.updateError = undefined;
+  images = images; // Trigger reactivity
+
+  try {
+    const imageRef = `${image.name}:${image.tag}`;
+    await window.pullImage(providerConnection, imageRef, () => {});
+
+    // After successful pull, update status to "Up to date"
+    const upToDateStatus: ImageUpdateStatus = {
+      status: 'normal',
+      updateAvailable: false,
+      message: 'Image is up to date',
+    };
+    image.updateStatus = upToDateStatus;
+
+    // Update the persistent store with the new status
+    setImageUpdateStatus(image.engineId, image.id, image.tag, upToDateStatus);
+  } catch (err: unknown) {
+    image.updateError = err instanceof Error ? err.message : String(err);
+  } finally {
+    image.updateInProgress = false;
+    images = images; // Trigger reactivity
+  }
+}
+
+// Update multiple images (called from modal)
+async function performBulkImageUpdate(imagesToUpdate: ImageInfoUI[]): Promise<void> {
+  // Update all images in parallel
+  await Promise.all(imagesToUpdate.map(image => performImageUpdate(image)));
+}
 
 let statusColumn = new TableColumn<ImageInfoUI>('Status', {
   align: 'center',
@@ -266,10 +489,23 @@ let sizeColumn = new TableColumn<ImageInfoUI, string>('Size', {
 });
 
 let archColumn = new TableColumn<ImageInfoUI, string>('Arch', {
+  width: '1fr',
   align: 'right',
   renderMapping: (image): string => image.arch,
   renderer: TableSimpleColumn,
   comparator: (a, b): number => a.arch.localeCompare(b.arch),
+});
+
+let updateColumn = new TableColumn<ImageInfoUI>('Update Available', {
+  width: '1fr',
+  align: 'right',
+  renderer: ImageColumnUpdateStatus,
+  comparator: (a, b): number => {
+    // Sort by update availability (available first)
+    const aAvailable = a.updateStatus?.updateAvailable ? 1 : 0;
+    const bAvailable = b.updateStatus?.updateAvailable ? 1 : 0;
+    return bAvailable - aAvailable;
+  },
 });
 
 const columns = [
@@ -279,6 +515,7 @@ const columns = [
   ageColumn,
   sizeColumn,
   archColumn,
+  updateColumn,
   new TableColumn<ImageInfoUI>('Actions', {
     align: 'right',
     width: '150px',
@@ -380,9 +617,18 @@ function label(item: ImageInfoUI): string {
         key={key}
         label={label}
         enableLayoutConfiguration={true}
+        onColumnVisibilityChange={handleColumnVisibilityChange}
         on:update={(): ImageInfoUI[] => (images = images)}>
       </Table>
     {/if}
   </div>
   {/snippet}
 </NavPage>
+
+{#if showUpdateModal}
+  <UpdateImagesModal
+    images={selectedImagesForUpdate}
+    onClose={closeUpdateModal}
+    onUpdate={handleUpdateFromModal}
+    onRecheck={handleRecheckFromModal} />
+{/if}

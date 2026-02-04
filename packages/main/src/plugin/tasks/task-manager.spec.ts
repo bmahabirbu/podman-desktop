@@ -201,6 +201,28 @@ test('create error notification task', async () => {
       body: task.body,
       markdownActions: task.markdownActions,
       status: 'failure',
+      error: 'body', // error field should be set to body for error notifications
+    }),
+  );
+});
+
+test('create info notification task should have error field set to body for display', async () => {
+  const task = taskManager.createNotificationTask({
+    title: 'title',
+    body: 'body',
+    type: 'info',
+  });
+  expect(task.id).equal('notification-1');
+  expect(task.name).equal('title');
+  expect(task.body).equal('body');
+  expect(apiSenderSendMock).toBeCalledWith(
+    'task-created',
+    expect.objectContaining({
+      id: task.id,
+      name: task.name,
+      body: task.body,
+      status: 'success',
+      error: 'body', // error field is set to body so message displays in UI
     }),
   );
 });

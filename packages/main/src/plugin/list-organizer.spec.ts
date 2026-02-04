@@ -224,4 +224,48 @@ describe('ListOrganizerRegistry', () => {
       { id: 'Status', label: 'Status', enabled: false, originalOrder: 0 },
     ]);
   });
+
+  test('should set Update Available column as hidden by default for image list', async () => {
+    mockConfiguration.get.mockReturnValue([]);
+
+    const result = await listOrganizerRegistry.loadListConfig('image', [
+      'Status',
+      'Name',
+      'Update Available',
+      'Actions',
+    ]);
+
+    // Update Available should be disabled by default
+    const updateColumn = result.find(item => item.id === 'Update Available');
+    expect(updateColumn).toBeDefined();
+    expect(updateColumn?.enabled).toBe(false);
+
+    // Other columns should be enabled
+    const statusColumn = result.find(item => item.id === 'Status');
+    expect(statusColumn?.enabled).toBe(true);
+
+    const nameColumn = result.find(item => item.id === 'Name');
+    expect(nameColumn?.enabled).toBe(true);
+  });
+
+  test('should set new Update Available column as hidden when merging with saved config', async () => {
+    // Simulating a scenario where user had saved config without Update Available column
+    const savedConfig: SavedListOrganizerConfig[] = [
+      { id: 'Status', enabled: true },
+      { id: 'Name', enabled: true },
+    ];
+    mockConfiguration.get.mockReturnValue(savedConfig);
+
+    const result = await listOrganizerRegistry.loadListConfig('image', [
+      'Status',
+      'Name',
+      'Update Available',
+      'Actions',
+    ]);
+
+    // Update Available should be disabled by default even when merging
+    const updateColumn = result.find(item => item.id === 'Update Available');
+    expect(updateColumn).toBeDefined();
+    expect(updateColumn?.enabled).toBe(false);
+  });
 });

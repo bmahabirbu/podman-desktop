@@ -987,6 +987,85 @@ describe('checkImageUpdateStatus handler', () => {
       message: 'Image is already the latest version',
     });
   });
+
+  test('should create error notification task when check returns error status', async () => {
+    const createNotificationTaskSpy = vi.spyOn(TaskManager.prototype, 'createNotificationTask');
+    const handle = handlers.get('image-registry:checkImageUpdateStatus');
+    expect(handle).not.equal(undefined);
+
+    const imageReference = 'private.registry.io/image:latest';
+    const imageTag = 'latest';
+    const localDigests: string[] = [];
+
+    vi.spyOn(ImageRegistry.prototype, 'checkImageUpdateStatus').mockResolvedValue({
+      status: 'error',
+      updateAvailable: false,
+      message: 'Authentication failed',
+    });
+
+    const result = await handle(undefined, imageReference, imageTag, localDigests);
+
+    expect(result.result).toEqual({
+      status: 'error',
+      updateAvailable: false,
+      message: 'Authentication failed',
+    });
+
+    expect(createNotificationTaskSpy).toHaveBeenCalledWith({
+      title: `Update check failed: ${imageReference}`,
+      body: 'Authentication failed',
+      type: 'error',
+    });
+  });
+
+  test('should create success notification task when update is available', async () => {
+    const createNotificationTaskSpy = vi.spyOn(TaskManager.prototype, 'createNotificationTask');
+    const handle = handlers.get('image-registry:checkImageUpdateStatus');
+    expect(handle).not.equal(undefined);
+
+    const imageReference = 'docker.io/library/alpine:latest';
+    const imageTag = 'latest';
+    const localDigests = ['alpine@sha256:abc123'];
+
+    vi.spyOn(ImageRegistry.prototype, 'checkImageUpdateStatus').mockResolvedValue({
+      status: 'normal',
+      updateAvailable: true,
+      remoteDigest: 'sha256:def456',
+      message: 'A newer version is available',
+    });
+
+    await handle(undefined, imageReference, imageTag, localDigests);
+
+    expect(createNotificationTaskSpy).toHaveBeenCalledWith({
+      title: `Update available: ${imageReference}`,
+      body: 'A newer version is available',
+      type: 'info',
+    });
+  });
+
+  test('should create success notification task when image is up to date', async () => {
+    const createNotificationTaskSpy = vi.spyOn(TaskManager.prototype, 'createNotificationTask');
+    const handle = handlers.get('image-registry:checkImageUpdateStatus');
+    expect(handle).not.equal(undefined);
+
+    const imageReference = 'docker.io/library/alpine:latest';
+    const imageTag = 'latest';
+    const localDigests = ['alpine@sha256:abc123'];
+
+    vi.spyOn(ImageRegistry.prototype, 'checkImageUpdateStatus').mockResolvedValue({
+      status: 'normal',
+      updateAvailable: false,
+      message: 'Image is already the latest version',
+    });
+
+    await handle(undefined, imageReference, imageTag, localDigests);
+
+    expect(createNotificationTaskSpy).toHaveBeenCalledWith({
+      title: `Up to date: ${imageReference}`,
+      body: 'Image is already the latest version',
+      type: 'info',
+    });
+  });
 });
 
 describe('container-provider-registry:playKube', () => {

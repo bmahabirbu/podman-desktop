@@ -19,6 +19,7 @@
 import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
 import type { Component } from 'svelte';
 
+import type { ImageUpdateStatus } from '/@api/image-registry';
 import type { ViewContributionBadgeValue } from '/@api/view-info';
 
 export interface ImageInfoUI {
@@ -44,4 +45,9 @@ export interface ImageInfoUI {
   children?: ImageInfoUI[];
   isManifest?: boolean;
   digest?: string;
+  // Update status fields
+  updateStatus?: ImageUpdateStatus;
+  updateCheckInProgress?: boolean;
+  updateInProgress?: boolean;
+  updateError?: string;
 }

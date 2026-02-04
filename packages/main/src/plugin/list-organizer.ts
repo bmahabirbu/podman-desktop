@@ -58,7 +58,7 @@ export class ListOrganizerRegistry implements IDisposable {
             [`list.${listKind}`]: {
               description: `Preferred list of columns for ${listKind}`,
               type: 'array',
-              default: this.parseConfiguration(availableColumns),
+              default: this.parseConfiguration(availableColumns, listKind),
               hidden: true,
             },
           },
@@ -92,13 +92,19 @@ export class ListOrganizerRegistry implements IDisposable {
     return this.createDefaultListItems(listKind, availableColumns);
   }
 
+  // Columns that should be hidden by default for specific list kinds
+  private readonly hiddenByDefault: Record<string, string[]> = {
+    image: ['Update Available'],
+  };
+
   // Helper: Create default list items
   private createDefaultListItems(listKind: string, availableColumns: string[]): ListOrganizerItem[] {
     const defaults = this.registeredLists[listKind] ?? availableColumns;
+    const hiddenColumns = this.hiddenByDefault[listKind] ?? [];
     return defaults.map((colName, index) => ({
       id: colName,
       label: this.getColumnLabel(colName),
-      enabled: true,
+      enabled: !hiddenColumns.includes(colName),
       originalOrder: index,
     }));
   }
@@ -141,13 +147,14 @@ export class ListOrganizerRegistry implements IDisposable {
     });
 
     // Add any new columns that weren't saved
+    const hiddenColumns = this.hiddenByDefault[listKind] ?? [];
     availableColumns
       .filter(colName => !savedIds.has(colName))
       .forEach(newCol => {
         mergedItems.push({
           id: newCol,
           label: this.getColumnLabel(newCol),
-          enabled: true,
+          enabled: !hiddenColumns.includes(newCol),
           originalOrder: getOriginalOrder(newCol),
         });
       });
@@ -155,10 +162,11 @@ export class ListOrganizerRegistry implements IDisposable {
     return mergedItems;
   }
 
-  parseConfiguration(list: string[]): SavedListOrganizerConfig[] {
+  parseConfiguration(list: string[], listKind?: string): SavedListOrganizerConfig[] {
+    const hiddenColumns = listKind ? (this.hiddenByDefault[listKind] ?? []) : [];
     return list.map(item => ({
       id: item,
-      enabled: true,
+      enabled: !hiddenColumns.includes(item),
     }));
   }
 }

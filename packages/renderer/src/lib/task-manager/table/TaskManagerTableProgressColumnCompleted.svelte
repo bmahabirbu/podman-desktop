@@ -42,8 +42,12 @@ const { icon, iconColor } = $derived.by(() => {
   </div>
   <div class="ml-1 text-[var(--pd-table-body-text)]">{task.status}</div>
 
-  {#if task.status === 'failure' && task.error}
-    <div class="cursor-default ml-1 text-[var(--pd-state-error)] overflow-hidden text-ellipsis" title={task.error}>
+  {#if task.error}
+    <div
+      class="cursor-default ml-1 overflow-hidden text-ellipsis {task.status === 'failure'
+        ? 'text-[var(--pd-state-error)]'
+        : 'text-[var(--pd-table-body-text-secondary)]'}"
+      title={task.error}>
       ({task.error})
     </div>
   {/if}

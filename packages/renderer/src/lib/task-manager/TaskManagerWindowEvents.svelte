@@ -1,4 +1,6 @@
 <script lang="ts">
+import { onDestroy, onMount } from 'svelte';
+
 interface Props {
   showTaskManager: boolean;
   outsideWindow?: HTMLDivElement;
@@ -50,9 +52,23 @@ function onKeyup({ key }: KeyboardEvent): void {
   }
 }
 
-// listen to the event "toggle-task-manager" to toggle the task manager
+// listen to the event "toggle-task-manager" to toggle the task manager (IPC event)
 window.events?.receive('toggle-task-manager', () => {
   toggle(!showTaskManager);
+});
+
+// Also listen for DOM CustomEvent for programmatic access from components
+function handleToggleTaskManagerEvent(): void {
+  toggle(!showTaskManager);
+}
+
+// Register custom event listener for programmatic task manager toggle
+onMount(() => {
+  window.addEventListener('toggle-task-manager', handleToggleTaskManagerEvent);
+});
+
+onDestroy(() => {
+  window.removeEventListener('toggle-task-manager', handleToggleTaskManagerEvent);
 });
 </script>
 
