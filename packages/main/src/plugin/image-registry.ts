@@ -667,13 +667,21 @@ export class ImageRegistry {
     return jsonConfig;
   }
 
-  // internal method that can loop to get the manifest specific to the arch/platform
+  /**
+   * Internal method to fetch and resolve manifests from a registry.
+   * For multi-arch images, this recursively resolves to the platform-specific manifest.
+   *
+   * @returns An object containing:
+   *   - manifest: The parsed manifest JSON
+   *   - digest: The platform-specific manifest digest (from docker-content-digest header)
+   *   - listDigest: The manifest list digest (only present for multi-arch images, undefined for single-arch)
+   */
   protected async getManifestFromURL(
     manifestURL: string,
     imageData: ImageRegistryNameTag,
     token: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ): Promise<any> {
+  ): Promise<{ manifest: unknown; digest: string | undefined; listDigest?: string }> {
     const options = this.getOptions();
     options.headers = options.headers ?? {};
 
@@ -757,15 +765,25 @@ export class ImageRegistry {
 
       // need to grab that manifest
       if (matchedManifest) {
+        // Multi-arch image detected: preserve the manifest list digest before recursing
+        // to the platform-specific manifest. This listDigest is needed for update comparison
+        // because container runtimes store the list digest in RepoDigests for multi-arch images.
+        const listDigest = digest;
         const matchedManifestDigest = matchedManifest.digest;
         // now, grab the manifest corresponding to the digest
-        const manifestURL = `${imageData.registryURL}/${imageData.name}/manifests/${matchedManifestDigest}`;
-        return this.getManifestFromURL(manifestURL, imageData, token);
+        const platformManifestURL = `${imageData.registryURL}/${imageData.name}/manifests/${matchedManifestDigest}`;
+        const { manifest, digest: platformDigest } = await this.getManifestFromURL(
+          platformManifestURL,
+          imageData,
+          token,
+        );
+        return { manifest, digest: platformDigest, listDigest };
       }
       throw new Error(
         `Unable to find a manifest corresponding to the platform os/architecture ${platformOs}/${platformArch}`,
       );
     }
+    // Single-arch image: return manifest and digest, no listDigest (undefined)
     return { manifest: parsedManifest, digest };
   }
 
@@ -811,7 +829,7 @@ export class ImageRegistry {
     return manifest;
   }
 
-  async getDigestFromImageName(imageName: string): Promise<string> {
+  async getDigestFromImageName(imageName: string): Promise<{ digest: string; listDigest?: string }> {
     const imageData = this.extractImageDataFromImageName(imageName);
 
     // grab auth info from the registry
@@ -822,13 +840,13 @@ export class ImageRegistry {
     }
 
     const manifestURL = `${imageData.registryURL}/${imageData.name}/manifests/${imageData.tag}`;
-    const { digest } = await this.getManifestFromURL(manifestURL, imageData, token);
+    const { digest, listDigest } = await this.getManifestFromURL(manifestURL, imageData, token);
 
     if (!digest) {
       throw new Error(`Registry did not return a digest for ${imageName}`);
     }
 
-    return digest;
+    return { digest, listDigest };
   }
 
   /**
@@ -837,7 +855,9 @@ export class ImageRegistry {
    *
    * @param imageReference - Full image reference (e.g., "docker.io/library/nginx:latest")
    * @param imageTag - The tag portion of the image reference
-   * @param localDigests - Array of local digests from imageInfo.RepoDigests
+   * @param localDigests - Array of local digests from imageInfo.RepoDigests.
+   *   For multi-arch images: Docker stores only the manifest list digest, Podman stores both list and platform digests.
+   *   For single-arch images: Both runtimes store only the platform digest.
    * @returns ImageUpdateStatus indicating if update is available
    */
   async checkImageUpdateStatus(
@@ -873,8 +893,11 @@ export class ImageRegistry {
 
     // Query the remote registry to get the current manifest digest
     let remoteDigest: string;
+    let listDigest: string | undefined;
     try {
-      remoteDigest = await this.getDigestFromImageName(imageReference);
+      const result = await this.getDigestFromImageName(imageReference);
+      remoteDigest = result.digest;
+      listDigest = result.listDigest;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (hasLocalTag) {
@@ -894,8 +917,16 @@ export class ImageRegistry {
       }
     }
 
-    // Check if the image is already up to date
-    const isAlreadyUpToDate = localDigests.some(digest => digest.endsWith(remoteDigest));
+    // Check if the image is already up to date by comparing digests.
+    //
+    // Digest comparison strategy:
+    // - Multi-arch images (listDigest is defined): Use the manifest list digest for comparison.
+    //   Both Docker and Podman store the list digest in RepoDigests for multi-arch images.
+    //   (Podman also stores the platform digest, but list digest is common to both runtimes)
+    // - Single-arch images (listDigest is undefined): Use the platform digest directly.
+    //   Both runtimes store only the platform digest for single-arch images.
+    const digestToCompare = listDigest ?? remoteDigest;
+    const isAlreadyUpToDate = localDigests.some(localDigest => localDigest.endsWith(digestToCompare));
 
     if (isAlreadyUpToDate) {
       return {
