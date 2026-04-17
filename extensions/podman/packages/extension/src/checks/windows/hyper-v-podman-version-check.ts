@@ -20,7 +20,8 @@ import { inject, injectable } from 'inversify';
 import { compare } from 'semver';
 
 import { BaseCheck } from '/@/checks/base-check';
-import { InstalledPodman, PodmanBinary } from '/@/utils/podman-binary';
+import type { InstalledPodman } from '/@/utils/podman-binary';
+import { PodmanBinary } from '/@/utils/podman-binary';
 
 @injectable()
 export class HyperVPodmanVersionCheck extends BaseCheck {
