@@ -20,7 +20,7 @@ import { inject, injectable } from 'inversify';
 import { compare } from 'semver';
 
 import { BaseCheck } from '/@/checks/base-check';
-import { PodmanBinary } from '/@/utils/podman-binary';
+import { InstalledPodman, PodmanBinary } from '/@/utils/podman-binary';
 
 @injectable()
 export class HyperVPodmanVersionCheck extends BaseCheck {
@@ -35,8 +35,13 @@ export class HyperVPodmanVersionCheck extends BaseCheck {
   }
 
   async execute(): Promise<CheckResult> {
-    const isPodmanVersionSupported = await this.isPodmanVersionSupported();
-    if (!isPodmanVersionSupported) {
+    const binaryInfo = await this.podmanBinary.getBinaryInfo();
+    if (!binaryInfo) {
+      // Podman is not installed => ignore
+      return this.createSuccessfulResult();
+    }
+
+    if (!this.isPodmanVersionSupported(binaryInfo)) {
       return this.createFailureResult({
         description: `Hyper-V is only supported with podman version >= ${HyperVPodmanVersionCheck.PODMAN_MINIMUM_VERSION_FOR_HYPERV}.`,
       });
@@ -44,9 +49,7 @@ export class HyperVPodmanVersionCheck extends BaseCheck {
     return this.createSuccessfulResult();
   }
 
-  private async isPodmanVersionSupported(): Promise<boolean> {
-    const binaryInfo = await this.podmanBinary.getBinaryInfo();
-    if (!binaryInfo) return true;
-    return compare(binaryInfo?.version, HyperVPodmanVersionCheck.PODMAN_MINIMUM_VERSION_FOR_HYPERV) >= 0;
+  private isPodmanVersionSupported(binaryInfo: InstalledPodman): boolean {
+    return compare(binaryInfo.version, HyperVPodmanVersionCheck.PODMAN_MINIMUM_VERSION_FOR_HYPERV) >= 0;
   }
 }
